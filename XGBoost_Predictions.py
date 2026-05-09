@@ -145,22 +145,35 @@ if st.sidebar.button("Analyze & Train Engine"):
         poc_bin_index = np.argmax(volume_by_bin)
         poc_price = bins[poc_bin_index]
 
-        # 5. XGBoost FEATURE PREPARATION
+        # 5. XGBoost FEATURE PREPARATION & LEAKAGE PROTECTION
         df_feats = pd.DataFrame(index=data.index)
         df_feats['Normalized_Movement'] = data['Normalized_Movement']
-        df_feats['Volume'] = volume
-        df_feats['Dist_to_BullOB'] = (close - data['Bullish_OB']).fillna(0)
-        df_feats['Dist_to_BearOB'] = (close - data['Bearish_OB']).fillna(0)
-        df_feats['Dist_to_POC'] = (close - poc_price)
-        df_feats['Dist_to_PP'] = (close - data['PP'])
+
+        # Calculate Relative Volume (normalizes volume across assets and times)
+        volume_sma = volume.rolling(window=20).mean()
+        df_feats['Relative_Volume'] = (volume / volume_sma).fillna(1.0)
+
+        # Normalize distance features using ATR as a standard volatility scale
+        atr_normalizer = data['ATR'].replace(0, 1e-5)
+        df_feats['Dist_to_BullOB'] = ((close - data['Bullish_OB']) / atr_normalizer).fillna(0)
+        df_feats['Dist_to_BearOB'] = ((close - data['Bearish_OB']) / atr_normalizer).fillna(0)
+        df_feats['Dist_to_POC'] = ((close - poc_price) / atr_normalizer)
+        df_feats['Dist_to_PP'] = ((close - data['PP']) / atr_normalizer)
 
         # Target: 1 if the price rises over the next 3 candles, 0 otherwise
         df_feats['Target'] = (close.shift(-3) > close).astype(int)
-        df_feats = df_feats.dropna()
+
+        # Extract the absolute latest live features before dropping NaN values
+        live_features = df_feats.iloc[[-1]].copy()
+
+        # Safely drop empty target rows from our training set
+        df_feats_clean = df_feats.dropna()
 
         # Train/Test Split
-        X = df_feats[['Normalized_Movement', 'Volume', 'Dist_to_BullOB', 'Dist_to_BearOB', 'Dist_to_POC', 'Dist_to_PP']]
-        y = df_feats['Target']
+        feature_cols = ['Normalized_Movement', 'Relative_Volume', 'Dist_to_BullOB', 'Dist_to_BearOB', 'Dist_to_POC',
+                        'Dist_to_PP']
+        X = df_feats_clean[feature_cols]
+        y = df_feats_clean['Target']
 
         split = int(len(X) * 0.8)
         X_train, y_train = X.iloc[:split], y.iloc[:split]
@@ -169,22 +182,16 @@ if st.sidebar.button("Analyze & Train Engine"):
         model = xgb.XGBClassifier(
             n_estimators=100,
             learning_rate=0.05,
-            max_depth=5,
+            max_depth=4,  # Reduced depth slightly to prevent overfitting on normalized units
             eval_metric="logloss",
             random_state=42
         )
         model.fit(X_train, y_train)
 
-        # Predict current probability
-        latest_live_features = pd.DataFrame([[
-            data['Normalized_Movement'].iloc[-1],
-            volume.iloc[-1],
-            (close.iloc[-1] - data['Bullish_OB'].iloc[-1]),
-            (close.iloc[-1] - data['Bearish_OB'].iloc[-1]),
-            (close.iloc[-1] - poc_price),
-            (close.iloc[-1] - data['PP'].iloc[-1])
-        ]], columns=X.columns)
+        # Prepare real-time normalized prediction features
+        latest_live_features = live_features[feature_cols]
 
+        # Calculate mathematically sound upward trend probability
         upward_probability = model.predict_proba(latest_live_features)[0][1]
 
         # --- PROCESS INTERACTIVE INSTRUCTIONS ---
