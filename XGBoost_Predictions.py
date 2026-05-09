@@ -27,7 +27,7 @@ xgb = install_and_import("xgboost")
 
 # --- APP CONFIG ---
 st.set_page_config(page_title="XGBoost Institutional Forecaster", layout="wide")
-st.title("🛡️ Institutional Engine: XGBoost + Volume Profile & SMC")
+st.title("🛡️ Institutional Engine: XGBoost + Volume Profile & SMC by Vijay Madhu")
 
 # --- SIDEBAR ---
 st.sidebar.header("Market Selector")
@@ -70,23 +70,34 @@ scale_mapping = {
 }
 point_scale = scale_mapping[asset_display]
 
-timeframe = st.sidebar.selectbox("Select Timeframe", ["5m", "15m", "1h"], index=1)
+# Upgraded to include 4 Hour, 1 Day, and 1 Week timeframes
+timeframe = st.sidebar.selectbox(
+    "Select Timeframe", 
+    ["5m", "15m", "1h", "4h", "1d", "1wk"], 
+    index=1
+)
 chart_style = st.sidebar.radio("Select Chart Style", ["Candlestick", "Line Chart"], index=0)
-intent = st.sidebar.radio("What Action are you Planning?", ["BUY / GO LONG", "SELL / GO SHORT"])
 
+# Map timeframes to secure yfinance download periods
 if timeframe == "5m":
     period = "10d"
 elif timeframe == "15m":
     period = "30d"
-else:
+elif timeframe == "1h":
     period = "90d"
+elif timeframe == "4h":
+    period = "730d"  # 4h data is limited to 730 days max on yfinance
+elif timeframe == "1d":
+    period = "2y"
+else:
+    period = "5y"    # Weekly needs a larger period to build enough data points for XGBoost
 
 # --- RUN ENGINE ---
 if st.sidebar.button("Analyze & Train Engine"):
     with st.spinner("Mining institutional volume profiles and training XGBoost model..."):
         data = yf.download(symbol, period=period, interval=timeframe)
         if data.empty:
-            st.error("Market data feed offline. Try again shortly.")
+            st.error("Market data feed offline or timeframe/period combination invalid. Try again shortly.")
             st.stop()
 
         if isinstance(data.columns, pd.MultiIndex):
@@ -182,7 +193,7 @@ if st.sidebar.button("Analyze & Train Engine"):
         model = xgb.XGBClassifier(
             n_estimators=100,
             learning_rate=0.05,
-            max_depth=4,  # Reduced depth slightly to prevent overfitting on normalized units
+            max_depth=4,
             eval_metric="logloss",
             random_state=42
         )
@@ -193,37 +204,66 @@ if st.sidebar.button("Analyze & Train Engine"):
 
         # Calculate mathematically sound upward trend probability
         upward_probability = model.predict_proba(latest_live_features)[0][1]
+        downward_probability = 1 - upward_probability
 
         # --- PROCESS INTERACTIVE INSTRUCTIONS ---
-        st.subheader("🤖 XGBoost Live Trading Execution Recommendation")
+        st.subheader("🤖 Unified XGBoost Market Recommendations")
 
         live_price = close.iloc[-1]
         currency_format = f"${live_price:.5f}" if "USD=X" in symbol or "CAD=X" in symbol or "JPY=X" in symbol else f"${live_price:,.2f}"
 
-        if intent == "BUY / GO LONG":
+        # Setup formats for target locations
+        ob_bull_format = f"${data['Bullish_OB'].iloc[-1]:.5f}" if "USD=X" in symbol or "CAD=X" in symbol or "JPY=X" in symbol else f"${data['Bullish_OB'].iloc[-1]:,.2f}"
+        ob_bear_format = f"${data['Bearish_OB'].iloc[-1]:.5f}" if "USD=X" in symbol or "CAD=X" in symbol or "JPY=X" in symbol else f"${data['Bearish_OB'].iloc[-1]:,.2f}"
+
+        # Output side-by-side diagnostic cards
+        rec_col1, rec_col2 = st.columns(2)
+
+        with rec_col1:
+            st.markdown("### 🟢 BUY Setup Profile")
             if upward_probability > 0.65:
                 st.success(
-                    f"🟢 **RIGHT TIME TO BUY NOW!**\n\n* **Current Spot Price:** {currency_format}\n* **Upward Trend Probability:** {upward_probability * 100:.1f}%\n* **Analysis:** Institutional accumulation is complete. Current price is sitting optimally above support structures and the Order Block.")
+                    f"**EXECUTE BUY ORDER NOW!**\n\n"
+                    f"* **Spot Entry Price:** {currency_format}\n"
+                    f"* **XGBoost Upward Confidence:** {upward_probability * 100:.1f}%\n"
+                    f"* **Analysis:** Institutional accumulation patterns detected. Price sits optimally above the local support node."
+                )
             elif upward_probability > 0.45:
-                ob_format = f"${data['Bullish_OB'].iloc[-1]:.5f}" if "USD=X" in symbol or "CAD=X" in symbol or "JPY=X" in symbol else f"${data['Bullish_OB'].iloc[-1]:,.2f}"
                 st.warning(
-                    f"🟡 **HOLD ON: WAIT FOR A PULLBACK**\n\n* **Current Spot Price:** {currency_format}\n* **Upward Trend Probability:** {upward_probability * 100:.1f}%\n* **Strategy:** Do not buy yet. Wait for a correction down to the nearest Order Block at **{ob_format}** before executing your long order.")
+                    f"**WAIT TO BUY (PULLBACK SETUP)**\n\n"
+                    f"* **Current Price:** {currency_format}\n"
+                    f"* **Optimal Buy Target:** **{ob_bull_format}** (Bullish Order Block)\n"
+                    f"* **Strategy:** Avoid chasing the market. Set a limit order at the Bullish OB floor level."
+                )
             else:
                 st.error(
-                    f"🔴 **DO NOT BUY!**\n\n* **Current Spot Price:** {currency_format}\n* **Upward Trend Probability:** {upward_probability * 100:.1f}%\n* **Analysis:** XGBoost predicts high downward momentum. Entering a buy right now will likely result in a loss.")
+                    f"**DO NOT BUY!**\n\n"
+                    f"* **XGBoost Upward Confidence:** {upward_probability * 100:.1f}%\n"
+                    f"* **Analysis:** High bearish momentum confirmed. Buying here risks catching a falling knife."
+                )
 
-        else:  # SELL / GO SHORT
-            downward_probability = 1 - upward_probability
+        with rec_col2:
+            st.markdown("### 🔴 SELL Setup Profile")
             if downward_probability > 0.65:
                 st.success(
-                    f"🔴 **RIGHT TIME TO ENTER SELL NOW!**\n\n* **Current Spot Price:** {currency_format}\n* **Downward Trend Probability:** {downward_probability * 100:.1f}%\n* **Analysis:** Distribution is complete. Price has rejected swing resistance and the bearish order block. Excellent short setup.")
+                    f"**EXECUTE SELL ORDER NOW!**\n\n"
+                    f"* **Spot Entry Price:** {currency_format}\n"
+                    f"* **XGBoost Downward Confidence:** {downward_probability * 100:.1f}%\n"
+                    f"* **Analysis:** Institutional distribution complete. Structure points down after key resistance rejection."
+                )
             elif downward_probability > 0.45:
-                ob_format = f"${data['Bearish_OB'].iloc[-1]:.5f}" if "USD=X" in symbol or "CAD=X" in symbol or "JPY=X" in symbol else f"${data['Bearish_OB'].iloc[-1]:,.2f}"
                 st.warning(
-                    f"🟡 **HOLD ON: WAIT FOR A BETTER ENTRY**\n\n* **Current Spot Price:** {currency_format}\n* **Downward Trend Probability:** {downward_probability * 100:.1f}%\n* **Strategy:** Wait for a short-term rally back up toward the Bearish Order Block boundary at **{ob_format}** or the Pivot Point line to maximize your risk-to-reward ratio.")
+                    f"**WAIT TO SELL (RALLY SETUP)**\n\n"
+                    f"* **Current Price:** {currency_format}\n"
+                    f"* **Optimal Sell Target:** **{ob_bear_format}** (Bearish Order Block)\n"
+                    f"* **Strategy:** Wait for a minor retracement up to the Bearish OB ceiling before securing your short entry."
+                )
             else:
                 st.error(
-                    f"🟢 **DO NOT SELL!**\n\n* **Current Spot Price:** {currency_format}\n* **Downward Trend Probability:** {downward_probability * 100:.1f}%\n* **Analysis:** Strong upward structural momentum detected. Selling now is trading against institutional flow.")
+                    f"**DO NOT SELL!**\n\n"
+                    f"* **XGBoost Downward Confidence:** {downward_probability * 100:.1f}%\n"
+                    f"* **Analysis:** Strong structural support and high demand remain. Selling into this strength is highly unsafe."
+                )
 
         # --- PLOTLY DATA VISUALIZATION ---
         fig = go.Figure()
@@ -276,4 +316,4 @@ if st.sidebar.button("Analyze & Train Engine"):
         st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.info("Select your asset pair, set your trading bias in the sidebar, and click 'Analyze & Train Engine'.")
+    st.info("Select your asset pair and timeframe in the sidebar, then click 'Analyze & Train Engine'.")
