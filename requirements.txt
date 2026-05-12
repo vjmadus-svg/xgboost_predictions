@@ -5,3 +5,5 @@ numpy
 plotly
 xgboost
 vectorbt
+MetaTrader5
+scikit-learn
