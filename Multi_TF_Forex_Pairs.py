@@ -4,7 +4,7 @@
 import datetime as dt
 import warnings
 import pandas as pd
-import yfinance as yf
+#import yfinance as yf
 from statsmodels.tsa.arima.model import ARIMA
 from tabulate import tabulate
 
