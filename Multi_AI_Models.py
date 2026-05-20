@@ -1,6 +1,11 @@
 import os
 import sys
-import subprocess
+import xgboost as xgb
+import lightgbm as lgb
+from catboost import CatBoostClassifier
+import pandas as pd
+import numpy as np
+import streamlit as st
 
 # --- STEP 1: AUTOMATIC DEPENDENCY INSTALLER ---
 venv_path = os.path.join(os.getcwd(), ".venv", "Lib", "site-packages")
@@ -8,8 +13,8 @@ if venv_path not in sys.path:
     sys.path.insert(0, venv_path)
 
 
-def safe_install(pip_name):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pip_name])
+## def safe_install(pip_name):
+## subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pip_name])
 
 
 for pkg, pip_pkg in [
