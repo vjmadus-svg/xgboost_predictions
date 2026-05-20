@@ -1,12 +1,9 @@
 import os
 import sys
-import xgboost as xgb
-import lightgbm as lgb
-from catboost import CatBoostClassifier
-import pandas as pd
-import numpy as np
-import streamlit as st
+import subprocess
 
+# --- STEP 1: AUTOMATIC DEPENDENCY INSTALLER ---
+#venv_path = os.path.join(os.getcwd(), ".venv", "Lib", "site-packages")
 
     try:
         __import__(pkg)
