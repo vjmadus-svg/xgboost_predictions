@@ -1,5 +1,6 @@
-streamlit
 xgboost
-pandas
-numpy
+lightgbm
+catboost
 scikit-learn
+pandas
+numpy<2.0.0
