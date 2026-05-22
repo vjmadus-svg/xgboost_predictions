@@ -1,9 +1,0 @@
-xgboost
-lightgbm
-catboost
-scikit-learn
-pandas
-numpy
-streamlit
-yfinance
-plotly
