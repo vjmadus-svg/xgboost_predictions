@@ -5,4 +5,6 @@ numpy
 plotly
 xgboost
 vectorbt
-
+lightgbm
+catboost
+scikit-learn
