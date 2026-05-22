@@ -1,3 +1,28 @@
+import os
+import sys
+import subprocess
+
+# --- STEP 1: AUTOMATIC DEPENDENCY INSTALLER ---
+venv_path = os.path.join(os.getcwd(), ".venv", "Lib", "site-packages")
+if venv_path not in sys.path:
+    sys.path.insert(0, venv_path)
+
+
+def safe_install(pip_name):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pip_name])
+
+
+for pkg, pip_pkg in [
+    ("xgboost", "xgboost"),
+    ("lightgbm", "lightgbm"),
+    ("catboost", "catboost"),
+    ("sklearn", "scikit-learn"),
+]:
+    try:
+        __import__(pkg)
+    except ImportError:
+        safe_install(pip_pkg)
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -357,6 +382,7 @@ def build_model(name):
             voting="soft",
         )
     elif name == "Gold-Tuned Stacked AI ⭐":
+        # Three diverse base learners with gold-optimised hyperparameters
         base_estimators = [
             ("xgb_g", xgb.XGBClassifier(
                 n_estimators=200, learning_rate=0.03, max_depth=5,
@@ -374,6 +400,7 @@ def build_model(name):
                 random_seed=42, verbose=0,
             )),
         ]
+        # Logistic Regression meta-learner with StandardScaler
         meta = Pipeline([
             ("sc", StandardScaler()),
             ("lr", LogisticRegression(C=0.5, max_iter=500, random_state=42)),
@@ -383,7 +410,7 @@ def build_model(name):
             final_estimator=meta,
             cv=5,
             stack_method="predict_proba",
-            passthrough=True,
+            passthrough=True,   # meta-learner also sees raw features
             n_jobs=-1,
         )
 
@@ -397,8 +424,8 @@ def train_and_predict(df_feats, model_name, feature_cols):
     y_train, y_test = y.iloc[:split], y.iloc[split:]
     model = build_model(model_name)
     model.fit(X_train, y_train)
-    acc  = accuracy_score(y_test, model.predict(X_test))
-    up_p = model.predict_proba(live[feature_cols])[0][1]
+    acc    = accuracy_score(y_test, model.predict(X_test))
+    up_p   = model.predict_proba(live[feature_cols])[0][1]
     return up_p, 1 - up_p, acc, model
 
 
@@ -610,14 +637,16 @@ if st.sidebar.button("🚀 Analyze & Train Engine"):
     else:
         st.subheader("📊 Model Comparison — All 6 Engines")
 
+        # Pre-build gold features once if needed
         df_feats_gold = None
+
         results = {}
         prog = st.progress(0)
         all_names = list(MODEL_OPTIONS.keys())
 
         for i, mname in enumerate(all_names):
-            fc     = get_feature_cols(mname)
-            use_gf = mname == "Gold-Tuned Stacked AI ⭐"
+            fc        = get_feature_cols(mname)
+            use_gf    = mname == "Gold-Tuned Stacked AI ⭐"
 
             if use_gf and df_feats_gold is None:
                 _, df_feats_gold, _, _, _, _, _, _ = build_features(
@@ -641,6 +670,7 @@ if st.sidebar.button("🚀 Analyze & Train Engine"):
         st.markdown(f"**🏆 Best Model by Test Accuracy:** `{best_name}`")
         st.markdown("---")
 
+        # Header row
         hcols = st.columns([2.5, 1.5, 1.5, 1.5])
         for hc, ht in zip(hcols, ["**Model**", "**🟢 BUY Prob**", "**🔴 SELL Prob**", "**🎯 Accuracy**"]):
             hc.markdown(ht)
@@ -672,13 +702,14 @@ if st.sidebar.button("🚀 Analyze & Train Engine"):
                     color:{c};font-weight:700;font-size:18px">{res['dn']*100:.1f}%</div>""",
                     unsafe_allow_html=True)
             with cols[3]:
-                ac  = "#ffd700" if gold_win else "#4dff91" if res["acc"] > 0.55 else "#ffaa4d"
+                ac = "#ffd700" if gold_win else "#4dff91" if res["acc"] > 0.55 else "#ffaa4d"
                 lbl = f"{res['acc']*100:.1f}%" if res["ok"] else "ERROR"
                 st.markdown(f"""<div style="background:{bg};border:1px solid {border};
                     border-radius:8px;padding:10px;text-align:center;
                     color:{ac};font-weight:700;font-size:18px">{lbl}</div>""",
                     unsafe_allow_html=True)
 
+        # Consensus
         st.markdown("---")
         st.subheader("🧠 Signal Consensus")
         ok  = {k: v for k, v in results.items() if v["ok"]}
@@ -719,7 +750,7 @@ if st.sidebar.button("🚀 Analyze & Train Engine"):
     # ══════════════════════════════════════════════════════════
     st.subheader("📉 Price Chart with Institutional Levels")
 
-    fig    = go.Figure()
+    fig = go.Figure()
     up_col = "#ffd700" if is_gold else "#4dff91"
     dn_col = "#b8860b" if is_gold else "#ff4d4d"
     ln_col = "#ffd700" if is_gold else "#4db8ff"
@@ -758,6 +789,7 @@ if st.sidebar.button("🚀 Analyze & Train Engine"):
         name="Bearish OB Ceiling",
     ))
 
+    # R1/S1 pivot extensions for gold
     if is_gold:
         fig.add_trace(go.Scatter(
             x=data.index, y=data['R1'], mode="lines",
